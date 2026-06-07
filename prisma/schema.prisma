@@ -1,0 +1,157 @@
+// Prisma schema for LinkedIn Autoposter.
+// Docs: https://pris.ly/d/prisma-schema
+//
+// SQLite does not support native enums, so status/type fields are modelled as
+// strings with the allowed values documented inline.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// A connected LinkedIn account (personal profile now, company page later).
+model Account {
+  id String @id @default(cuid())
+
+  provider String @default("linkedin")
+
+  /// "PERSON" | "ORGANIZATION"
+  authorType String @default("PERSON")
+
+  /// LinkedIn author URN, e.g. "urn:li:person:{id}" or "urn:li:organization:{id}".
+  authorUrn String
+
+  /// Raw LinkedIn member/org id (without the URN prefix).
+  providerAccountId String?
+
+  /// Display name fetched from LinkedIn (for UI).
+  name  String?
+  email String?
+
+  /// OAuth tokens, encrypted at rest with APP_ENCRYPTION_KEY.
+  accessToken  String
+  refreshToken String?
+
+  expiresAt        DateTime?
+  refreshExpiresAt DateTime?
+
+  /// Space-delimited granted scopes.
+  scope String?
+
+  drafts Draft[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, authorUrn])
+}
+
+/// A reusable topic the scheduler turns into drafts on a cadence.
+model Topic {
+  id   String @id @default(cuid())
+  text String
+
+  /// "ACTIVE" | "PAUSED"
+  status String @default("ACTIVE")
+
+  /// Optional generation hints reused on each scheduled run.
+  tone   String?
+  length String?
+
+  lastRunAt DateTime?
+
+  drafts Draft[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A generated post moving through the approval + publish pipeline.
+model Draft {
+  id String @id @default(cuid())
+
+  /// Optional link back to a saved Topic (null for ad-hoc Post Generator drafts).
+  topicId String?
+  topic   Topic?  @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  /// Account the draft is/was published from.
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  content String
+
+  /// "PENDING" | "APPROVED" | "REJECTED" | "PUBLISHED" | "FAILED"
+  status String @default("PENDING")
+
+  /// "MANUAL" (Post Generator page) | "SCHEDULER"
+  source String @default("MANUAL")
+
+  /// Generation hints used to produce this draft.
+  tone   String?
+  length String?
+
+  scheduledAt DateTime?
+  publishedAt DateTime?
+
+  /// URN returned by LinkedIn after a successful publish.
+  linkedInPostUrn String?
+
+  /// Last error message + retry bookkeeping for the publisher worker.
+  error    String?
+  attempts Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+/// Per-provider LLM credentials + model selection, managed entirely from the UI.
+///
+/// The set of *available* providers and their selectable models lives in code
+/// (`lib/llm/registry.ts`); this table only stores the user's API key, chosen
+/// model, and which provider is currently active. Adding a provider in the
+/// registry makes it configurable here with no schema change.
+model LlmProvider {
+  /// Registry provider key, e.g. "gemini" | "deepseek".
+  id String @id
+
+  /// API key, encrypted at rest with APP_ENCRYPTION_KEY (see lib/crypto).
+  apiKey String?
+
+  /// Selected model id for this provider (defaults to the registry default).
+  model String?
+
+  /// Exactly one provider should be active at a time (enforced in app logic).
+  isActive Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Singleton app configuration row (id is always "singleton").
+///
+/// Holds the friendly generation/publishing schedules (stored as JSON strings)
+/// plus the worker's last-run bookkeeping so the once-a-minute master tick can
+/// decide when each job is due without restarting on settings changes.
+model AppSetting {
+  id String @id @default("singleton")
+
+  generationEnabled Boolean @default(false)
+  /// JSON-encoded ScheduleConfig (see lib/schedule.ts).
+  generationSchedule String?
+  lastGenerationAt   DateTime?
+
+  publishingEnabled Boolean @default(false)
+  /// JSON-encoded ScheduleConfig (see lib/schedule.ts).
+  publishingSchedule String?
+  lastPublishAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

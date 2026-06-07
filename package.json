@@ -1,0 +1,41 @@
+{
+  "name": "firmbroadcast",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "worker": "tsx worker/index.ts",
+    "worker:scheduler": "tsx worker/index.ts scheduler",
+    "worker:publisher": "tsx worker/index.ts publisher"
+  },
+  "dependencies": {
+    "@google/genai": "^2.8.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "better-sqlite3": "^12.10.0",
+    "next": "16.2.7",
+    "node-cron": "^4.2.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.7",
+    "prisma": "^7.8.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.22.4",
+    "typescript": "^5"
+  }
+}
