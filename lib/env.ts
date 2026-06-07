@@ -26,11 +26,23 @@ export const env = {
   APP_URL: optional("APP_URL") ?? "http://localhost:3000",
 } as const;
 
+function getSupabasePublishableKey(): string {
+  const publishable = optional("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+  if (publishable) return publishable;
+
+  const legacyAnon = optional("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  if (legacyAnon) return legacyAnon;
+
+  throw new Error(
+    "Missing required environment variable: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or legacy NEXT_PUBLIC_SUPABASE_ANON_KEY)",
+  );
+}
+
 /** Supabase Auth (email/password login). */
 export function getSupabaseConfig() {
   return {
     url: required("NEXT_PUBLIC_SUPABASE_URL"),
-    anonKey: required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    anonKey: getSupabasePublishableKey(),
   };
 }
 

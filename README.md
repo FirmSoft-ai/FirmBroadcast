@@ -104,7 +104,7 @@ Minimum required variables:
 | --- | --- |
 | `DATABASE_URL` | Supabase Postgres connection string (use the **Transaction pooler** URL on Vercel) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key (`sb_publishable_…`; legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` also accepted) |
 | `APP_URL` | Public app URL, e.g. `http://localhost:3000` |
 | `APP_ENCRYPTION_KEY` | 32-byte key for encrypting LinkedIn tokens and AI keys at rest |
 | `LINKEDIN_CLIENT_ID` | LinkedIn app Client ID |
