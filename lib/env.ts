@@ -19,6 +19,16 @@ function optional(name: string): string | undefined {
   return value && value.trim() !== "" ? value : undefined;
 }
 
+/** Ensure APP_URL has a scheme and no trailing slash. */
+export function normalizeAppUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  const scheme = process.env.NODE_ENV === "production" ? "https" : "http";
+  return `${scheme}://${trimmed}`;
+}
+
 function appendQueryParam(url: string, key: string, value: string): string {
   if (url.includes(`${key}=`)) return url;
   const sep = url.includes("?") ? "&" : "?";
@@ -86,7 +96,7 @@ function resolveDatabaseUrl(): string {
 export const env = {
   DATABASE_URL: resolveDatabaseUrl(),
   NODE_ENV: process.env.NODE_ENV ?? "development",
-  APP_URL: optional("APP_URL") ?? "http://localhost:3000",
+  APP_URL: normalizeAppUrl(optional("APP_URL") ?? "http://localhost:3000"),
 } as const;
 
 function getSupabasePublishableKey(): string {
@@ -119,7 +129,7 @@ export function getLinkedInConfig() {
   return {
     clientId: required("LINKEDIN_CLIENT_ID"),
     clientSecret: required("LINKEDIN_CLIENT_SECRET"),
-    redirectUri: `https://${env.APP_URL}/api/auth/linkedin/callback`,
+    redirectUri: `${env.APP_URL}/api/auth/linkedin/callback`,
   };
 }
 

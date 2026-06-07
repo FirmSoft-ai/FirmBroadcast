@@ -67,6 +67,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "OAuth failed";
-    return redirectHome({ connected: "0", error: message });
+    try {
+      return redirectHome({ connected: "0", error: message });
+    } catch {
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 }
