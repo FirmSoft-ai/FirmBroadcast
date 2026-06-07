@@ -1,4 +1,4 @@
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/app/generated/prisma/client";
 import { env } from "@/lib/env";
 
@@ -7,14 +7,14 @@ import { env } from "@/lib/env";
  * exhausting database connections. In production a fresh client is created.
  *
  * Prisma 7's `prisma-client` generator requires a driver adapter; we use the
- * better-sqlite3 adapter for local SQLite persistence.
+ * pg adapter for Supabase Postgres.
  */
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
 function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaBetterSqlite3({ url: env.DATABASE_URL });
+  const adapter = new PrismaPg({ connectionString: env.DATABASE_URL });
   return new PrismaClient({
     adapter,
     log:

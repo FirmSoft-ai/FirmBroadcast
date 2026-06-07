@@ -10,5 +10,10 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // Use Supabase direct connection (port 5432) for migrations when the app
+    // uses the transaction pooler (port 6543).
+    ...(process.env["DIRECT_URL"]
+      ? { directUrl: process.env["DIRECT_URL"] }
+      : {}),
   },
 });

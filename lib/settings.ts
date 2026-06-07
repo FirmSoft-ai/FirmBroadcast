@@ -3,7 +3,7 @@
  *   - the singleton `AppSetting` row (generation/publishing schedules), and
  *   - `LlmProvider` rows (per-provider API key + model + active flag).
  *
- * Shared by the Settings API routes and the worker so both see one source of
+ * Shared by the Settings API routes and the cron tick so both see one source of
  * truth. API keys are encrypted at rest via `lib/crypto`.
  */
 

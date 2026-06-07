@@ -26,6 +26,14 @@ export const env = {
   APP_URL: optional("APP_URL") ?? "http://localhost:3000",
 } as const;
 
+/** Supabase Auth (email/password login). */
+export function getSupabaseConfig() {
+  return {
+    url: required("NEXT_PUBLIC_SUPABASE_URL"),
+    anonKey: required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+  };
+}
+
 /** Key used to encrypt LinkedIn tokens at rest (32-byte, base64 or hex). */
 export function getEncryptionKey(): string {
   return required("APP_ENCRYPTION_KEY");

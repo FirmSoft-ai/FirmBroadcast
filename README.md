@@ -17,7 +17,8 @@ Posts enter the same approval pipeline whether you generate them manually or the
 - **Manual publish** — Publish approved drafts immediately with **Publish now**, or let the worker post on schedule.
 - **Scheduled generation & publishing** — Separate, user-friendly schedules (hourly, every N hours, daily, weekly) configured in Settings—no raw cron.
 - **LinkedIn OAuth** — Connect a personal profile (`w_member_social`) and publish via the LinkedIn Posts API.
-- **Encrypted secrets** — LinkedIn tokens and AI API keys are encrypted at rest (AES-256-GCM) in SQLite.
+- **Encrypted secrets** — LinkedIn tokens and AI API keys are encrypted at rest (AES-256-GCM) in Supabase Postgres.
+- **Email/password login** — Supabase Auth protects the app; create users in the Supabase dashboard.
 
 ---
 
@@ -26,10 +27,10 @@ Posts enter the same approval pipeline whether you generate them manually or the
 ```mermaid
 flowchart LR
   settings[(Settings: provider + schedules)]
-  topics[(Topics)] --> worker[Worker master tick]
+  topics[(Topics)] --> cron[Vercel cron / local worker]
   user[User] -->|on-demand| generator[Post Generator]
-  settings --> worker
-  worker -->|when due| llm[Active LLM provider]
+  settings --> cron
+  cron -->|when due| llm[Active LLM provider]
   generator --> llm
   llm --> pending[(Drafts: PENDING)]
   pending --> dashboard[Approval dashboard]
@@ -52,10 +53,10 @@ flowchart LR
 | --- | --- |
 | App | [Next.js 16](https://nextjs.org) (App Router) + TypeScript + React 19 |
 | Styling | Tailwind CSS 4 |
-| Database | SQLite via [Prisma 7](https://www.prisma.io) + `better-sqlite3` adapter |
+| Database | [Supabase](https://supabase.com) Postgres via [Prisma 7](https://www.prisma.io) + `@prisma/adapter-pg` |
 | AI | Pluggable adapters: `@google/genai` (Gemini), OpenAI-compatible `fetch` (DeepSeek) |
-| Worker | `node-cron` + `tsx` — separate process sharing the Prisma client |
-| Auth | LinkedIn OAuth 2.0 (OpenID Connect + Share on LinkedIn) |
+| Scheduling | [Vercel Cron Jobs](https://vercel.com/docs/cron-jobs) (`/api/cron/tick` every minute); local dev worker optional |
+| Auth | Supabase Auth (email/password) + LinkedIn OAuth 2.0 for posting |
 
 ---
 
@@ -64,12 +65,16 @@ flowchart LR
 Before running FirmBroadcast locally, you need:
 
 1. **Node.js 20+** and npm
-2. **A LinkedIn Developer app** with:
+2. **A Supabase project** with:
+   - Postgres database (copy the connection string from Project Settings → Database)
+   - Auth enabled with at least one user (Authentication → Users → Add user)
+   - Project URL and anon key (Project Settings → API)
+3. **A LinkedIn Developer app** with:
    - [Sign In with LinkedIn using OpenID Connect](https://www.linkedin.com/developers/)
    - **Share on LinkedIn** product (for `w_member_social`)
    - Redirect URL: `http://localhost:3000/api/auth/linkedin/callback` (or your `APP_URL` + `/api/auth/linkedin/callback`)
-3. **An encryption key** — 32-byte secret for token/key encryption (`openssl rand -base64 32`)
-4. **An AI provider API key** — Gemini and/or DeepSeek (configured in the UI after first boot; not required in `.env`)
+4. **An encryption key** — 32-byte secret for token/key encryption (`openssl rand -base64 32`)
+5. **An AI provider API key** — Gemini and/or DeepSeek (configured in the UI after first boot; not required in `.env`)
 
 See [PLAN.md](PLAN.md) Phase 0 for LinkedIn portal setup details.
 
@@ -97,11 +102,14 @@ Minimum required variables:
 
 | Variable | Description |
 | --- | --- |
-| `DATABASE_URL` | SQLite path, e.g. `file:./dev.db` (relative to `prisma/`) |
+| `DATABASE_URL` | Supabase Postgres connection string (use the **Transaction pooler** URL on Vercel) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
 | `APP_URL` | Public app URL, e.g. `http://localhost:3000` |
 | `APP_ENCRYPTION_KEY` | 32-byte key for encrypting LinkedIn tokens and AI keys at rest |
 | `LINKEDIN_CLIENT_ID` | LinkedIn app Client ID |
 | `LINKEDIN_CLIENT_SECRET` | LinkedIn app Client Secret |
+| `CRON_SECRET` | Random secret for `/api/cron/tick` (required in production on Vercel) |
 
 AI provider keys and schedules are **not** set in `.env`—use the Settings page after the app starts.
 
@@ -126,7 +134,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) and sign in with the Supabase user you created.
 
 ### 5. First-time setup in the UI
 
@@ -135,11 +143,11 @@ Open [http://localhost:3000](http://localhost:3000).
 3. **Topics** (`/topics`) — Add reusable prompts (optional; used by scheduled generation).
 4. **Post Generator** (`/generate`) — Create your first draft manually.
 
-### 6. Start the background worker (optional)
+### 6. Local scheduling (optional)
 
-The worker handles scheduled generation from active topics and scheduled publishing of approved drafts. It reads schedules from the database every minute—changes in Settings apply without restarting the worker.
+In production on **Vercel**, scheduled generation and publishing run automatically via a cron job (`vercel.json` → `/api/cron/tick` every minute). Set `CRON_SECRET` in your Vercel project env vars; Vercel sends it as `Authorization: Bearer …`.
 
-In a **second terminal**:
+For **local development**, run the dev worker in a second terminal (same logic as the cron tick):
 
 ```bash
 npm run worker
@@ -152,7 +160,16 @@ npm run worker:scheduler   # run one generation tick, then exit
 npm run worker:publisher   # run one publish tick, then exit
 ```
 
-For local development you typically run **both** `npm run dev` and `npm run worker`.
+---
+
+## Deploying to Vercel + Supabase
+
+1. **Supabase** — Create a project, run migrations against it (`npm run db:migrate`), and add at least one Auth user.
+2. **Vercel** — Import the repo and set environment variables from `.env.example`.
+3. **Database URL** — Use the Supabase **Transaction pooler** connection string (port `6543`) for `DATABASE_URL` on Vercel.
+4. **Cron** — `vercel.json` is included; set `CRON_SECRET` in Vercel. Cron jobs only run on **production** deployments.
+5. **Auth redirect** — In Supabase → Authentication → URL Configuration, add your Vercel domain to **Site URL** and **Redirect URLs** (include `/auth/callback`).
+6. **LinkedIn** — Add your production callback URL to the LinkedIn app redirect allowlist.
 
 ---
 
@@ -160,6 +177,7 @@ For local development you typically run **both** `npm run dev` and `npm run work
 
 | Route | Purpose |
 | --- | --- |
+| `/login` | Email/password sign-in (Supabase Auth) |
 | `/` | Dashboard — connected accounts, draft filters (Pending / Approved / Rejected / Published), approval actions, load-more pagination |
 | `/generate` | Post Generator — ad-hoc topic, tone/length, preview, save to queue |
 | `/topics` | Manage reusable prompts; active topics are generated on the global schedule |
@@ -221,7 +239,7 @@ When generation is due, the worker creates **one PENDING draft per ACTIVE topic*
 | `npm run build` | Production build |
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint |
-| `npm run worker` | Background worker (master tick every minute) |
+| `npm run worker` | Local dev scheduler (master tick every minute) |
 | `npm run worker:scheduler` | Single generation tick |
 | `npm run worker:publisher` | Single publish tick |
 | `npm run db:migrate` | Apply Prisma migrations |
@@ -234,13 +252,17 @@ When generation is due, the worker creates **one PENDING draft per ACTIVE topic*
 
 ```
 app/
+  login/                # Supabase email/password sign-in
   page.tsx              # Dashboard
   generate/             # Post Generator
   topics/               # Topics CRUD UI
   settings/             # AI + schedule settings
-  api/                  # Route handlers (drafts, topics, settings, OAuth, …)
+  api/                  # Route handlers (drafts, topics, settings, OAuth, cron, …)
+  auth/callback/        # Supabase auth callback
   components/           # Shared UI (nav, draft-card, …)
 lib/
+  supabase/             # Browser + server Supabase clients, session middleware
+  cron/                 # Vercel cron tick + auth verification
   llm/                  # Universal generation (registry, adapters, generatePost)
   linkedin/             # OAuth, token refresh, publish
   schedule.ts           # Friendly schedule presets + due logic
@@ -248,12 +270,14 @@ lib/
   crypto.ts             # AES-256-GCM encryption
   env.ts                # Typed environment access
 worker/
-  index.ts              # Master cron loop
+  index.ts              # Local dev scheduler loop
   scheduler.ts          # Generate drafts from active topics
   publisher.ts          # Publish due approved drafts
 prisma/
-  schema.prisma         # SQLite schema
+  schema.prisma         # Postgres schema
   migrations/           # Migration history
+vercel.json             # Vercel cron configuration
+middleware.ts           # Supabase session refresh + route protection
 ```
 
 ---
@@ -272,14 +296,14 @@ prisma/
 | Phase | Status | Summary |
 | --- | --- | --- |
 | 0 | Manual | LinkedIn app + credentials |
-| 1 | Done | Scaffolding, Prisma, SQLite |
+| 1 | Done | Scaffolding, Prisma, Supabase Postgres |
 | 2 | Done | LinkedIn OAuth (personal) |
 | 3 | Done | AI generation + Post Generator |
 | 4 | Done | Approval dashboard |
-| 5 | Done | Scheduler + publisher worker |
-| Alpha | Done | Multi-model settings, friendly schedules, manual publish, paginated dashboard |
+| 5 | Done | Scheduler + publisher (Vercel cron + local worker) |
+| Alpha | Done | Multi-model settings, friendly schedules, manual publish, paginated dashboard, Supabase Auth |
 | 6 | Planned | Company page posting |
-| 7 | Planned | Hardening + deploy |
+| 7 | Planned | Hardening |
 
 Full details: [PLAN.md](PLAN.md).
 
@@ -290,7 +314,8 @@ Full details: [PLAN.md](PLAN.md).
 - Never commit `.env` or real API keys.
 - `APP_ENCRYPTION_KEY` protects LinkedIn OAuth tokens and AI provider keys in the database.
 - The Settings API returns `keySet: true/false` only—never the decrypted key.
-- This alpha targets **single-user / trusted local or small-team** use; there is no multi-tenant auth layer yet.
+- Supabase Auth protects all routes except `/login` and `/auth/callback`. Cron endpoints use `CRON_SECRET` instead of session auth.
+- Create app users in the Supabase dashboard (Authentication → Users); self-service signup is not enabled in the UI yet.
 
 ---
 

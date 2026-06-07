@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -12,6 +13,18 @@ const LINKS = [
 
 export function Nav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === "/login") {
+    return null;
+  }
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <header className="border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-black/80">
@@ -19,7 +32,7 @@ export function Nav() {
         <Link href="/" className="font-semibold tracking-tight">
           FirmBroadcast
         </Link>
-        <div className="flex items-center gap-1 text-sm">
+        <div className="flex flex-1 items-center gap-1 text-sm">
           {LINKS.map((link) => {
             const active =
               link.href === "/"
@@ -40,6 +53,13 @@ export function Nav() {
             );
           })}
         </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="rounded-md px-3 py-1.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+        >
+          Sign out
+        </button>
       </nav>
     </header>
   );

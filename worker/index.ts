@@ -1,60 +1,28 @@
 /**
- * Worker entry point — the hands-off autoposter loop.
+ * Local dev scheduler — mirrors the Vercel cron tick on a once-a-minute loop.
  *
- * Usage (via package scripts):
- *   npm run worker             # start the master loop (once-a-minute tick)
+ * Usage:
+ *   npm run worker             # start the master loop
  *   npm run worker:scheduler   # run a single scheduler tick, then exit
  *   npm run worker:publisher   # run a single publisher tick, then exit
  *
- * The master loop fires every minute and reads the DB-backed schedules
- * (managed from Settings) to decide whether generation and/or publishing are
- * due. Changing schedules in the UI takes effect on the next tick — no restart
- * required. `dotenv/config` is imported first so the standalone process picks
- * up the same `.env` Next.js uses.
+ * In production on Vercel, scheduling is handled by `/api/cron/tick` via
+ * `vercel.json`. This script is only needed for local development.
  */
 
 import "dotenv/config";
 
-import cron from "node-cron";
 import { prisma } from "@/lib/prisma";
-import { isScheduleDue } from "@/lib/schedule";
-import {
-  getResolvedSchedules,
-  markGenerationRun,
-  markPublishRun,
-} from "@/lib/settings";
+import { runCronTick } from "@/lib/cron/tick";
 import { createLogger } from "@/worker/log";
 import { runPublisherTick } from "@/worker/publisher";
 import { runSchedulerTick } from "@/worker/scheduler";
 
 const log = createLogger("worker");
 
-const MASTER_CRON = "* * * * *"; // every minute
+const TICK_MS = 60_000;
 
-/** One master tick: consult the DB schedules and run whatever is due. */
-async function masterTick(now: Date = new Date()): Promise<void> {
-  const cfg = await getResolvedSchedules();
-
-  if (
-    cfg.generationEnabled &&
-    isScheduleDue(cfg.generationSchedule, cfg.lastGenerationAt, now)
-  ) {
-    log.info("Generation due; running scheduler tick");
-    await runSchedulerTick(now);
-    await markGenerationRun(now);
-  }
-
-  if (
-    cfg.publishingEnabled &&
-    isScheduleDue(cfg.publishingSchedule, cfg.lastPublishAt, now)
-  ) {
-    log.info("Publishing due; running publisher tick");
-    await runPublisherTick(now);
-    await markPublishRun(now);
-  }
-}
-
-/** Guard against overlapping runs when a tick outlives its cron interval. */
+/** Guard against overlapping runs when a tick outlives its interval. */
 function once(name: string, fn: () => Promise<unknown>): () => Promise<void> {
   let running = false;
   return async () => {
@@ -86,13 +54,11 @@ async function runOnce(mode: "scheduler" | "publisher"): Promise<void> {
 }
 
 function startLoop(): void {
-  const tick = once("master", masterTick);
+  const tick = once("master", runCronTick);
 
-  cron.schedule(MASTER_CRON, tick);
-  log.info("Worker started", { masterCron: MASTER_CRON });
+  setInterval(tick, TICK_MS);
+  log.info("Worker started", { intervalMs: TICK_MS });
 
-  // Kick once at boot so a freshly started worker doesn't idle until the next
-  // minute boundary.
   void tick();
 
   const shutdown = (signal: string) => {

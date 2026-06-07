@@ -1,8 +1,7 @@
 // Prisma schema for LinkedIn Autoposter.
 // Docs: https://pris.ly/d/prisma-schema
 //
-// SQLite does not support native enums, so status/type fields are modelled as
-// strings with the allowed values documented inline.
+// Status/type fields are modelled as strings with the allowed values documented inline.
 
 generator client {
   provider = "prisma-client"
@@ -10,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 /// A connected LinkedIn account (personal profile now, company page later).
@@ -137,7 +136,7 @@ model LlmProvider {
 /// Singleton app configuration row (id is always "singleton").
 ///
 /// Holds the friendly generation/publishing schedules (stored as JSON strings)
-/// plus the worker's last-run bookkeeping so the once-a-minute master tick can
+/// plus the cron tick's last-run bookkeeping so the once-a-minute job can
 /// decide when each job is due without restarting on settings changes.
 model AppSetting {
   id String @id @default("singleton")

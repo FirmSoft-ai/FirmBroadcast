@@ -2,8 +2,8 @@
  * Friendly schedule presets shared by the Settings UI and the worker.
  *
  * Instead of raw cron, schedules are described as one of a few presets and
- * stored as JSON on `AppSetting`. The worker runs a once-a-minute master tick
- * and uses {@link isScheduleDue} to decide whether each job should fire, based
+ * stored as JSON on `AppSetting`. A Vercel cron job (or the local dev worker)
+ * runs a once-a-minute tick and uses {@link isScheduleDue} to decide whether each job should fire, based
  * on the preset and the last-run timestamp. All times are interpreted in the
  * server's local timezone.
  */
