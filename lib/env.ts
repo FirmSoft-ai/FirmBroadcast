@@ -19,9 +19,72 @@ function optional(name: string): string | undefined {
   return value && value.trim() !== "" ? value : undefined;
 }
 
+function appendQueryParam(url: string, key: string, value: string): string {
+  if (url.includes(`${key}=`)) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}${key}=${value}`;
+}
+
+import {
+  assertSupabaseCredentials,
+  parsePostgresHost,
+} from "@/lib/database-url";
+
+/**
+ * Normalize Supabase pooler URLs for Prisma on serverless (Vercel, etc.).
+ * Transaction mode (port 6543) needs pgbouncer=true and a low connection limit.
+ */
+function normalizeDatabaseUrl(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed.startsWith("file:")) {
+    throw new Error(
+      "DATABASE_URL must be a PostgreSQL connection string. SQLite (file:…) is not supported with the pg adapter.",
+    );
+  }
+
+  const host = parsePostgresHost(trimmed);
+  const usesTransactionPooler =
+    host?.includes("pooler.supabase.com") && trimmed.includes(":6543");
+
+  let normalized = trimmed;
+  if (usesTransactionPooler) {
+    normalized = appendQueryParam(normalized, "pgbouncer", "true");
+    normalized = appendQueryParam(normalized, "connection_limit", "1");
+  }
+
+  return normalized;
+}
+
+/** Fail fast in production when DATABASE_URL cannot work from serverless. */
+function assertServerlessDatabaseUrl(url: string): void {
+  if (process.env.NODE_ENV !== "production") return;
+
+  const host = parsePostgresHost(url);
+  if (!host) return;
+
+  if (host === "localhost" || host === "127.0.0.1") {
+    throw new Error(
+      "DATABASE_URL points to localhost, which is unreachable on Vercel. Set DATABASE_URL to your Supabase Transaction pooler URL (port 6543, ?pgbouncer=true).",
+    );
+  }
+
+  if (/^db\.[^.]+\.supabase\.co$/i.test(host)) {
+    throw new Error(
+      "DATABASE_URL uses Supabase direct connection (db.*.supabase.co), which is unreachable from Vercel serverless. In Vercel env vars, set DATABASE_URL to the Transaction pooler URL from Supabase → Connect → ORMs → Prisma (host aws-0-[region].pooler.supabase.com, port 6543, ?pgbouncer=true). Keep the direct URL in DIRECT_URL for local migrations only.",
+    );
+  }
+}
+
+function resolveDatabaseUrl(): string {
+  const url = normalizeDatabaseUrl(required("DATABASE_URL"));
+  assertSupabaseCredentials(url, "DATABASE_URL");
+  assertServerlessDatabaseUrl(url);
+  return url;
+}
+
 /** Always-needed core config (DB + app). */
 export const env = {
-  DATABASE_URL: required("DATABASE_URL"),
+  DATABASE_URL: resolveDatabaseUrl(),
   NODE_ENV: process.env.NODE_ENV ?? "development",
   APP_URL: optional("APP_URL") ?? "http://localhost:3000",
 } as const;
@@ -56,9 +119,7 @@ export function getLinkedInConfig() {
   return {
     clientId: required("LINKEDIN_CLIENT_ID"),
     clientSecret: required("LINKEDIN_CLIENT_SECRET"),
-    redirectUri:
-      optional("LINKEDIN_REDIRECT_URI") ??
-      `${env.APP_URL}/api/auth/linkedin/callback`,
+    redirectUri: `https://${env.APP_URL}/api/auth/linkedin/callback`,
   };
 }
 

@@ -72,7 +72,7 @@ Before running FirmBroadcast locally, you need:
 3. **A LinkedIn Developer app** with:
    - [Sign In with LinkedIn using OpenID Connect](https://www.linkedin.com/developers/)
    - **Share on LinkedIn** product (for `w_member_social`)
-   - Redirect URL: `http://localhost:3000/api/auth/linkedin/callback` (or your `APP_URL` + `/api/auth/linkedin/callback`)
+   - Redirect URL: `{APP_URL}/api/auth/linkedin/callback` (e.g. `http://localhost:3000/api/auth/linkedin/callback` locally)
 4. **An encryption key** — 32-byte secret for token/key encryption (`openssl rand -base64 32`)
 5. **An AI provider API key** — Gemini and/or DeepSeek (configured in the UI after first boot; not required in `.env`)
 
@@ -117,7 +117,6 @@ Optional tuning (see [.env.example](.env.example)):
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `LINKEDIN_REDIRECT_URI` | `${APP_URL}/api/auth/linkedin/callback` | OAuth callback |
 | `LINKEDIN_API_VERSION` | `202605` | `LinkedIn-Version` header (`YYYYMM`) |
 | `MAX_PUBLISH_ATTEMPTS` | `5` | Retries before a draft is marked `FAILED` |
 | `PUBLISH_BATCH_SIZE` | `5` | Max drafts published per worker tick |
@@ -164,12 +163,20 @@ npm run worker:publisher   # run one publish tick, then exit
 
 ## Deploying to Vercel + Supabase
 
-1. **Supabase** — Create a project, run migrations against it (`npm run db:migrate`), and add at least one Auth user.
+1. **Supabase** — Create a project and add at least one Auth user.
 2. **Vercel** — Import the repo and set environment variables from `.env.example`.
-3. **Database URL** — Use the Supabase **Transaction pooler** connection string (port `6543`) for `DATABASE_URL` on Vercel.
-4. **Cron** — `vercel.json` is included; set `CRON_SECRET` in Vercel. Cron jobs only run on **production** deployments.
-5. **Auth redirect** — In Supabase → Authentication → URL Configuration, add your Vercel domain to **Site URL** and **Redirect URLs** (include `/auth/callback`).
-6. **LinkedIn** — Add your production callback URL to the LinkedIn app redirect allowlist.
+3. **Database URLs** — Set both on Vercel:
+   - `DATABASE_URL` — Supabase **Transaction pooler** (port `6543`, `?pgbouncer=true`) for runtime queries.
+   - `DIRECT_URL` — Supabase **Session pooler** or direct URL (port `5432`) for Prisma migrations during build.
+4. **Migrations** — Each Vercel deploy runs `prisma migrate deploy` automatically (`vercel-build`). To apply migrations manually first:
+
+   ```bash
+   DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres" npm run db:deploy
+   ```
+
+5. **Cron** — `vercel.json` is included; set `CRON_SECRET` in Vercel. Cron jobs only run on **production** deployments.
+6. **Auth redirect** — In Supabase → Authentication → URL Configuration, add your Vercel domain to **Site URL** and **Redirect URLs** (include `/auth/callback`).
+7. **LinkedIn** — Add your production callback URL to the LinkedIn app redirect allowlist.
 
 ---
 
@@ -242,7 +249,8 @@ When generation is due, the worker creates **one PENDING draft per ACTIVE topic*
 | `npm run worker` | Local dev scheduler (master tick every minute) |
 | `npm run worker:scheduler` | Single generation tick |
 | `npm run worker:publisher` | Single publish tick |
-| `npm run db:migrate` | Apply Prisma migrations |
+| `npm run db:migrate` | Create/apply Prisma migrations (local dev) |
+| `npm run db:deploy` | Apply pending migrations to production DB |
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run db:generate` | Regenerate Prisma client |
 
@@ -288,6 +296,96 @@ middleware.ts           # Supabase session refresh + route protection
 - **Company pages** require the gated Community Management API (`w_organization_social`)—planned for a later phase ([PLAN.md](PLAN.md) Phase 6).
 - Posts are created with `POST https://api.linkedin.com/rest/posts` and version headers `LinkedIn-Version` + `X-Restli-Protocol-Version: 2.0.0`.
 - LinkedIn rate limits are roughly **100 API calls per member per day**—keep publishing cadence modest.
+
+---
+
+## LinkedIn topics — FirmPulse ([pulse.firmsoft.ai](https://pulse.firmsoft.ai/))
+
+Copy any row into **Topics** (`/topics`). The **Topic** column is the prompt the scheduler sends to the LLM. **Tone** and **Length** are optional hints; leave blank to use your global defaults.
+
+### Positioning & thought leadership
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| Why IoT operations teams are still stitching together 4–6 disconnected tools — and what an "operations layer" looks like instead of another dashboard | bold | long |
+| 43% of unplanned downtime is first reported by customers, not the ops team. Share a story about reactive vs. predictive operations and how early detection changes mean time to respond | storytelling | medium |
+| The difference between a raw IoT platform, a point tool, and a full operations stack — when to use each and why most teams outgrow "just collect telemetry" | professional | long |
+| "We found out the sensor failed because the fridge alarm went off — three hours later." Write about the gap between threshold alarms and true predictive maintenance | conversational | medium |
+| One platform vs. five tools: Grafana for charts, Jira for tickets, email for coordination, spreadsheets for calibration — why context fragmentation kills response time | bold | medium |
+
+### Predictive maintenance & alarms
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| How nightly 0–100 device health scores, ranked work queues, and predicted failure ETAs (up to 90 days) help ops teams fix the right asset before a 2am emergency | professional | medium |
+| Three detection layers in one acknowledge workflow: compound threshold rules, statistical anomaly detection, and AI explanations grounded in live sensor readings | professional | long |
+| From anomaly to work order in one click — how auto-generated maintenance tasks with SLA deadlines close the loop between monitoring and action | conversational | short |
+| IEC 62682 incident correlation: when multiple alarms share a root cause, one incident view beats five separate pager notifications | professional | medium |
+| AI alarm intelligence that explains *why* an alarm fired and suggests next steps — not generic chatbot advice, but context from your actual telemetry | bold | medium |
+
+### Compliance & reporting
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| The audit-week scramble: pulling logs from five systems into a spreadsheet vs. 45 built-in report types exportable in one click, any time | storytelling | medium |
+| Pharma & life sciences: 21 CFR Part 11, ISO/IEC 17025, and GxP audit trails — what "audit-ready" actually means for IoT telemetry and calibration | professional | long |
+| Food & beverage cold chain: HACCP monitoring, ISO 22000, and alerts that fire before product is compromised — not after a customer complaint | professional | medium |
+| Schedule compliance reports to run automatically so auditors get what they need before they ask — ISO 27001, SOC 2, FDA, GHG Protocol, and industry-specific packs | professional | medium |
+| Calibration traceability with reference standard, accredited lab, accreditation ID, and certificate URL stored per log — built for ISO/IEC 17025 reviews | professional | short |
+
+### Industry spotlights
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| FirmPulse for pharma & life sciences: GxP audit trails, calibration traceability, and cleanroom ACH reporting in one connected platform | professional | medium |
+| Data center operations: PUE monitoring, uptime reporting, and ISO 27001-aligned audit packs — beyond "pretty Grafana charts" | professional | medium |
+| Energy & utilities: NERC CIP awareness, kWh tracking, CO₂ reporting, and slab-by-slab tariff modeling for real energy cost visibility | professional | medium |
+| Commercial buildings & ISA-95 hierarchy: work orders, SLAs, NAMUR NE107 device health states, and building → room → device rollups | professional | medium |
+| Manufacturing ops at scale: 200+ devices, predictive maintenance queue preventing unplanned shutdowns, and one place to go when something goes wrong | storytelling | medium |
+
+### Technical differentiators
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| Adaptive transport: LAN WebSocket (4–8ms), BLE fallback, MQTT cloud relay — devices stay connected without firmware changes when the network shifts | bold | medium |
+| Native OPC-UA bridge with no sidecar: poll node IDs directly into anomaly detection, alarms, health scoring, and compliance reports | professional | short |
+| OTA firmware updates with canary, rolling, or all-at-once deploys plus auto-rollback when failure thresholds breach — full per-device audit trail | professional | medium |
+| IEC 62443 command approval workflow: high-stakes device commands require multi-approver sign-off before dispatch | professional | short |
+| Schema-isolated multi-tenancy on AWS IoT Core — MQTT, OPC-UA, LoRaWAN, BLE, REST, and WebSocket in one platform | professional | medium |
+| Smart Insights: ask questions about sensor data in plain English with your own LLM key (OpenAI, Anthropic, or compatible) — operational AI without vendor lock-in | conversational | medium |
+
+### Energy & sustainability
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| Real energy cost computed per reading, not estimated from daily averages — unlimited tariff slabs from flat-rate to progressive utility plans | professional | medium |
+| See which floor or appliance drives the bill before it arrives: consumption rolled up building → room → device with CO₂ equivalent alongside cost | conversational | medium |
+| Sustainability reporting built in: top energy consumers surfaced automatically, default 0.233 kg/kWh CO₂e, overridable per org for renewable-backed grids | professional | short |
+
+### Mobile & integrations
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| FirmPulse mobile app: push alarms, one-tap acknowledge from the lock screen, live parameter state, and compliance report export from the field | conversational | short |
+| Webhooks to Slack, Teams, Jira, PagerDuty, email, or any HTTP endpoint — HMAC-signed with automatic retry and exponential backoff | professional | short |
+| When an alarm fires, your team shouldn't hunt across five tools — monitoring, work orders, escalation, and compliance in one connected workflow | bold | medium |
+
+### Product & growth CTAs
+
+| Topic | Tone | Length |
+| --- | --- | --- |
+| Introducing FirmPulse — the IoT operations platform for industrial and commercial teams. Not a box of tools to wire together. The operations layer, assembled. Link: pulse.firmsoft.ai | inspirational | short |
+| Early access waitlist for FirmPulse is open — limited spots for teams tired of assembling Grafana + Jira + email + spreadsheets. Book a demo or join the waitlist at pulse.firmsoft.ai | conversational | short |
+| 2.3× faster mean response time and 90% SLA adherence — what changes when alerts trigger automated action pipelines instead of manual triage | bold | medium |
+| Book a 30-minute FirmPulse walkthrough tailored to your industry and device stack — no commitment, see monitoring, predictive maintenance, and compliance in one demo | professional | short |
+
+### Suggested posting cadence
+
+- **Week 1–2:** Positioning + one industry spotlight + one feature deep-dive.
+- **Week 3–4:** Compliance angle + technical differentiator + mobile/integrations.
+- **Ongoing:** Rotate pain-point stories, customer-outcome narratives, and soft CTAs (waitlist / demo) — aim for 2–3 posts per week with varied tone so the feed doesn't feel repetitive.
+
+Pause or rotate topics in `/topics` after a draft publishes so the scheduler doesn't repeat the same angle back-to-back.
 
 ---
 

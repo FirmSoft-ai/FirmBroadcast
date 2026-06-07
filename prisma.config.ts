@@ -2,6 +2,33 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { assertSupabaseCredentials } from "./lib/database-url";
+
+function resolveMigrationUrl(): string {
+  const directUrl = process.env["DIRECT_URL"];
+  const databaseUrl = process.env["DATABASE_URL"];
+
+  if (directUrl?.trim()) {
+    const url = directUrl.trim();
+    assertSupabaseCredentials(url, "DIRECT_URL");
+    return url;
+  }
+
+  if (databaseUrl?.trim()) {
+    if (databaseUrl.includes(":6543")) {
+      throw new Error(
+        "DIRECT_URL is required for Prisma migrations when DATABASE_URL uses the transaction pooler (port 6543). Add the Supabase session/direct URL (port 5432) to Vercel env vars.",
+      );
+    }
+    const url = databaseUrl.trim();
+    assertSupabaseCredentials(url, "DATABASE_URL");
+    return url;
+  }
+
+  throw new Error(
+    "Missing database URL for Prisma migrations. Set DIRECT_URL (port 5432) or DATABASE_URL.",
+  );
+}
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -9,11 +36,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
-    // Use Supabase direct connection (port 5432) for migrations when the app
-    // uses the transaction pooler (port 6543).
-    ...(process.env["DIRECT_URL"]
-      ? { directUrl: process.env["DIRECT_URL"] }
-      : {}),
+    // Prisma CLI (migrate, db pull) needs a direct/session connection.
+    // Runtime on Vercel uses the pooled DATABASE_URL via lib/prisma.ts.
+    url: resolveMigrationUrl(),
   },
 });
