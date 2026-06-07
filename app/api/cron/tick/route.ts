@@ -5,7 +5,7 @@ import { runCronTick } from "@/lib/cron/tick";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-/** Vercel cron entry point — runs once per minute in production. */
+/** Vercel cron entry point — runs once per day in production (Hobby plan limit). */
 export async function GET(request: NextRequest) {
   const authError = verifyCronRequest(request);
   if (authError) return authError;
